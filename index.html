@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoramento de Transporte - INSTIC</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { display: flex; height: 100vh; background-color: #f4f6f9; }
+        #painel { width: 350px; background: #ffffff; padding: 25px; box-shadow: 4px 0 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; z-index: 1000; }
+        #mapa { flex: 1; height: 100vh; }
+        h2 { color: #1e293b; font-size: 22px; margin-bottom: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
+        .info-box { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #3b82f6; }
+        .info-label { font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+        .info-value { font-size: 18px; color: #0f172a; font-weight: 600; margin-top: 5px; }
+        .status-online { color: #10b981; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="painel">
+        <div>
+            <h2>📍 Monitoramento</h2>
+            <div class="info-box">
+                <div class="info-label">Veículo</div>
+                <div id="veiculo-id" class="info-value">Aguardando...</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">Velocidade Atual</div>
+                <div id="veiculo-velocidade" class="info-value">0.0 km/h</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">Status do Sistema</div>
+                <div id="sistema-status" class="info-value status-online">Conectado à Nuvem</div>
+            </div>
+        </div>
+        <div style="font-size: 11px; color: #94a3b8; text-align: center;">INSTIC Telecons • 2026</div>
+    </div>
+
+    <div id="mapa"></div>
+
+    <script>
+        // 1. CONFIGURAÇÃO INTEGRADA DO FIREBASE
+        const firebaseConfig = {
+            apiKey: "AIzaSyAsg5cyS2BdWTPgmUpELMy-0GMKXZjv7d8",
+            authDomain: "monitoramento-transporte.firebaseapp.com",
+            databaseURL: "https://monitoramento-transporte-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "monitoramento-transporte",
+            storageBucket: "monitoramento-transporte.firebasestorage.app",
+            messagingSenderId: "276561132699",
+            appId: "1:276561132699:web:08a71c33b37ee75ffc1a3e"
+        };
+
+        // Inicializa o Firebase no Frontend
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // 2. INICIALIZAÇÃO DO MAPA LEAFLET
+        // Começa focado em Luanda/Viana por padrão
+        const mapa = L.map('mapa').setView([-9.051227, 13.398332], 15);
+
+        // Adiciona a camada visual do OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(mapa);
+
+        // Cria o marcador do autocarro (inicialmente no ponto padrão)
+        let marcadorAutocarro = L.marker([-9.051227, 13.398332]).addTo(mapa);
+        marcadorAutocarro.bindPopup("<b>Autocarro INSTIC</b><br>Monitoramento ativo.").openPopup();
+
+        // 3. ESCUTA EM TEMPO REAL DOS DADOS DA NUVEM
+        database.ref('/transporte').on('value', (snapshot) => {
+            const dados = snapshot.val();
+            
+            if (dados) {
+                const lat = dados.latitude;
+                const lng = dados.longitude;
+                const vel = dados.velocidade;
+                const id = dados.id_veiculo;
+
+                // Nova posição detetada
+                const novaPosicao = new L.LatLng(lat, lng);
+
+                // Move o marcador do autocarro suavemente no mapa
+                marcadorAutocarro.setLatLng(novaPosicao);
+                
+                // Faz o mapa centralizar a câmara automaticamente na nova posição
+                mapa.panTo(novaPosicao);
+
+                // Atualiza os dados textuais no Painel Lateral HTML
+                document.getElementById('veiculo-id').innerText = id;
+                document.getElementById('veiculo-velocidade').innerText = vel.toFixed(1) + " km/h";
+                
+                // Atualiza o texto dentro do popup do balãozinho
+                marcadorAutocarro.setPopupContent(`<b>${id}</b><br>Velocidade: ${vel.toFixed(1)} km/h`);
+            }
+        });
+    </script>
+</body>
+</html>
