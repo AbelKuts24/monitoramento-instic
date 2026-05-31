@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
@@ -18,13 +19,15 @@
         #mapa { flex: 1; height: 100vh; }
         
         h2 { color: #1e293b; font-size: 20px; border-bottom: 2px solid #10b981; padding-bottom: 5px; }
-        .btn-gps { background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        .btn-gps:hover { background: #059669; }
+        .btn-gps { background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .btn-share { background: #3b82f6; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
         
         .info-container { display: flex; flex-direction: column; gap: 10px; }
         .info-box { background: #f8fafc; padding: 12px; border-radius: 8px; border-left: 4px solid #10b981; }
         .info-label { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold; }
         .info-value { font-size: 16px; color: #0f172a; font-weight: 600; }
+
+        #qr-modal { display:none; position:fixed; top:20%; left:50%; transform:translateX(-50%); background:white; padding:20px; border-radius:10px; box-shadow:0 0 20px rgba(0,0,0,0.3); z-index:2000; text-align:center; }
 
         /* --- MEDIA QUERIES PARA TELEMÓVEL --- */
         @media (max-width: 768px) {
@@ -32,7 +35,7 @@
             #painel { width: 100%; height: auto; padding: 15px; order: 1; }
             .info-container { flex-direction: row; gap: 8px; }
             .info-box { flex: 1; padding: 8px; }
-            #mapa { height: calc(100vh - 200px); order: 2; }
+            #mapa { height: calc(100vh - 250px); order: 2; }
         }
     </style>
 </head>
@@ -41,47 +44,40 @@
     <div id="painel">
         <h2>📍 Monitoramento Pro</h2>
         <button class="btn-gps" onclick="pedirLocalizacao()">📍 Sincronizar Localização</button>
+        <button class="btn-share" onclick="document.getElementById('qr-modal').style.display='block'">📱 Partilhar App (QR)</button>
+        
         <div class="info-container">
-            <div class="info-box">
-                <div class="info-label">Distância</div>
-                <div id="dist" class="info-value">--</div>
-            </div>
-            <div class="info-box">
-                <div class="info-label">Previsão</div>
-                <div id="eta" class="info-value">--</div>
-            </div>
+            <div class="info-box"><div class="info-label">Distância</div><div id="dist" class="info-value">--</div></div>
+            <div class="info-box"><div class="info-label">Previsão</div><div id="eta" class="info-value">--</div></div>
         </div>
-        <div class="info-box">
-            <div class="info-label">Velocidade Atual</div>
-            <div id="vel" class="info-value">0.0 km/h</div>
-        </div>
+    </div>
+
+    <div id="qr-modal">
+        <p>Escanear para aceder:</p>
+        <div id="qrcode" style="margin: 15px auto;"></div>
+        <button onclick="document.getElementById('qr-modal').style.display='none'">Fechar</button>
     </div>
 
     <div id="mapa"></div>
 
     <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyAsg5cyS2BdWTPgmUpELMy-0GMKXZjv7d8",
-            databaseURL: "https://monitoramento-transporte-default-rtdb.europe-west1.firebasedatabase.app"
-        };
+        const firebaseConfig = { apiKey: "AIzaSyAsg5cyS2BdWTPgmUpELMy-0GMKXZjv7d8", databaseURL: "https://monitoramento-transporte-default-rtdb.europe-west1.firebasedatabase.app" };
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
         const mapa = L.map('mapa').setView([-9.051227, 13.398332], 14);
-        
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(mapa);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapa);
 
         let busMarker = L.marker([-9.051227, 13.398332]).addTo(mapa);
-        let userMarker = L.circleMarker([0,0], {color: '#10b981', radius: 8, fillOpacity: 1}).addTo(mapa);
-        let linha = L.polyline([], {color: '#10b981', weight: 5, opacity: 0.7}).addTo(mapa);
+        let userMarker = L.circleMarker([0,0], {color: '#10b981', radius: 8}).addTo(mapa);
+        let linha = L.polyline([], {color: '#10b981', weight: 5}).addTo(mapa);
+
+        new QRCode(document.getElementById("qrcode"), { text: window.location.href, width: 150, height: 150 });
 
         function pedirLocalizacao() {
             if (navigator.geolocation) {
                 navigator.geolocation.watchPosition(pos => {
-                    const {latitude, longitude} = pos.coords;
-                    userMarker.setLatLng([latitude, longitude]);
-                }, () => alert("Erro ao aceder ao GPS."));
+                    userMarker.setLatLng([pos.coords.latitude, pos.coords.longitude]);
+                });
             }
         }
 
@@ -89,16 +85,11 @@
             const data = snap.val();
             if (!data) return;
             busMarker.setLatLng([data.latitude, data.longitude]);
-            document.getElementById('vel').innerText = data.velocidade.toFixed(1) + " km/h";
-            
             const u = userMarker.getLatLng();
             if (u.lat !== 0) {
                 const dist = calcularDistancia(u.lat, u.lng, data.latitude, data.longitude);
-                const vel = Math.max(data.velocidade, 5); 
-                const tempo = (dist / vel) * 60;
-                
                 document.getElementById('dist').innerText = dist.toFixed(1) + " km";
-                document.getElementById('eta').innerText = tempo < 1 ? "< 1 min" : tempo.toFixed(0) + " min";
+                document.getElementById('eta').innerText = (dist / Math.max(data.velocidade, 5) * 60).toFixed(0) + " min";
                 linha.setLatLngs([u, [data.latitude, data.longitude]]);
                 mapa.fitBounds(linha.getBounds(), {padding: [50, 50]});
             }
@@ -106,9 +97,7 @@
 
         function calcularDistancia(lat1, lon1, lat2, lon2) {
             const R = 6371;
-            const dLat = (lat2-lat1)*Math.PI/180;
-            const dLon = (lon2-lon1)*Math.PI/180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+            const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(((lon2-lon1)*Math.PI/180)/2)**2;
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
     </script>
