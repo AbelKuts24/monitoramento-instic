@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Monitoramento de Transporte - INSTIC</title>
+    <title>Monitoramento INSTIC</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -13,44 +13,45 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
         body { display: flex; flex-direction: row; height: 100vh; background-color: #f4f6f9; overflow: hidden; }
-        #painel { width: 350px; background: #ffffff; padding: 25px; box-shadow: 4px 0 15px rgba(0,0,0,0.1); z-index: 1000; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        #painel { width: 350px; background: #ffffff; padding: 20px; box-shadow: 4px 0 15px rgba(0,0,0,0.1); z-index: 1000; display: flex; flex-direction: column; gap: 15px; }
         #mapa { flex: 1; height: 100vh; }
-        h2 { color: #1e293b; font-size: 22px; margin-bottom: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
-        .info-container { display: flex; flex-direction: column; gap: 15px; }
-        .info-box { background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6; }
-        .info-label { font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold; }
-        .info-value { font-size: 18px; color: #0f172a; font-weight: 600; margin-top: 5px; }
+        
+        h2 { color: #1e293b; font-size: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 5px; }
+        .btn-gps { background: #3b82f6; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .info-container { display: flex; flex-direction: column; gap: 10px; }
+        .info-box { background: #f8fafc; padding: 12px; border-radius: 8px; border-left: 4px solid #3b82f6; }
+        .info-label { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+        .info-value { font-size: 16px; color: #0f172a; font-weight: 600; }
 
-        /* MÁGICA RESPONSIVA PARA TELEMÓVEL */
+        /* MÁGICA RESPONSIVA */
         @media (max-width: 768px) {
             body { flex-direction: column; }
             #painel { width: 100%; height: auto; padding: 15px; }
             .info-container { flex-direction: row; gap: 8px; }
-            .info-box { flex: 1; padding: 10px; }
-            .info-value { font-size: 15px; }
-            #mapa { height: calc(100vh - 160px); }
+            .info-box { flex: 1; padding: 8px; }
+            #mapa { height: calc(100vh - 180px); }
         }
     </style>
 </head>
 <body>
 
     <div id="painel">
-        <div>
-            <h2>📍 Monitoramento</h2>
-            <div class="info-container">
-                <div class="info-box">
-                    <div class="info-label">Distância</div>
-                    <div id="distancia-usuario" class="info-value">--</div>
-                </div>
-                <div class="info-box">
-                    <div class="info-label">Chegada (Est.)</div>
-                    <div id="tempo-chegada" class="info-value">--</div>
-                </div>
+        <h2>📍 Monitoramento INSTIC</h2>
+        <button class="btn-gps" onclick="pedirLocalizacao()">📍 Ativar Minha Localização</button>
+        <div class="info-container">
+            <div class="info-box">
+                <div class="info-label">Distância</div>
+                <div id="dist" class="info-value">--</div>
             </div>
-            <div class="info-box" style="margin-top: 15px;">
-                <div class="info-label">Velocidade</div>
-                <div id="veiculo-velocidade" class="info-value">0.0 km/h</div>
+            <div class="info-box">
+                <div class="info-label">Previsão</div>
+                <div id="eta" class="info-value">--</div>
             </div>
+        </div>
+        <div class="info-box">
+            <div class="info-label">Velocidade Atual</div>
+            <div id="vel" class="info-value">0.0 km/h</div>
         </div>
     </div>
 
@@ -64,36 +65,47 @@
 
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
-        const mapa = L.map('mapa').setView([-9.051227, 13.398332], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
-        let marcadorAutocarro = L.marker([-9.051227, 13.398332]).addTo(mapa);
+        const mapa = L.map('mapa').setView([-9.051227, 13.398332], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapa);
 
-        let userLat, userLng;
-        navigator.geolocation.watchPosition((pos) => {
-            userLat = pos.coords.latitude;
-            userLng = pos.coords.longitude;
-        }, (err) => console.error("GPS indisponível"));
+        let busMarker = L.marker([-9.051227, 13.398332]).addTo(mapa);
+        let userMarker = L.circleMarker([0,0], {color: 'blue', radius: 8, fillOpacity: 0.8}).addTo(mapa);
+        let linha = L.polyline([], {color: '#3b82f6', weight: 4, dashArray: '10, 10'}).addTo(mapa);
+
+        function pedirLocalizacao() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(pos => {
+                    const {latitude, longitude} = pos.coords;
+                    userMarker.setLatLng([latitude, longitude]);
+                }, (err) => alert("Permissão negada ou GPS indisponível."));
+            }
+        }
 
         function calcularDistancia(lat1, lon1, lat2, lon2) {
             const R = 6371;
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            const dLat = (lat2-lat1)*Math.PI/180;
+            const dLon = (lon2-lon1)*Math.PI/180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        database.ref('/transporte').on('value', (snapshot) => {
-            const dados = snapshot.val();
-            if (dados) {
-                marcadorAutocarro.setLatLng([dados.latitude, dados.longitude]);
-                document.getElementById('veiculo-velocidade').innerText = dados.velocidade.toFixed(1) + " km/h";
+        database.ref('/transporte').on('value', (snap) => {
+            const data = snap.val();
+            if (!data) return;
 
-                if (userLat) {
-                    const dist = calcularDistancia(userLat, userLng, dados.latitude, dados.longitude);
-                    const tempo = (dados.velocidade > 0.5) ? (dist / dados.velocidade) * 60 : 0;
-                    document.getElementById('distancia-usuario').innerText = dist.toFixed(2) + " km";
-                    document.getElementById('tempo-chegada').innerText = tempo.toFixed(0) + " min";
-                }
+            busMarker.setLatLng([data.latitude, data.longitude]);
+            document.getElementById('vel').innerText = data.velocidade.toFixed(1) + " km/h";
+            
+            const u = userMarker.getLatLng();
+            if (u.lat !== 0) {
+                const dist = calcularDistancia(u.lat, u.lng, data.latitude, data.longitude);
+                // ETA com velocidade mínima de 5km/h para não zerar o tempo
+                const vel = Math.max(data.velocidade, 5); 
+                const tempo = (dist / vel) * 60;
+                
+                document.getElementById('dist').innerText = dist.toFixed(1) + " km";
+                document.getElementById('eta').innerText = tempo < 1 ? "< 1 min" : tempo.toFixed(0) + " min";
+                linha.setLatLngs([u, [data.latitude, data.longitude]]);
             }
         });
     </script>
