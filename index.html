@@ -17,28 +17,30 @@
         #painel { width: 350px; background: #ffffff; padding: 20px; box-shadow: 4px 0 15px rgba(0,0,0,0.1); z-index: 1000; display: flex; flex-direction: column; gap: 15px; }
         #mapa { flex: 1; height: 100vh; }
         
-        h2 { color: #1e293b; font-size: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 5px; }
-        .btn-gps { background: #3b82f6; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        h2 { color: #1e293b; font-size: 20px; border-bottom: 2px solid #10b981; padding-bottom: 5px; }
+        .btn-gps { background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-gps:hover { background: #059669; }
+        
         .info-container { display: flex; flex-direction: column; gap: 10px; }
-        .info-box { background: #f8fafc; padding: 12px; border-radius: 8px; border-left: 4px solid #3b82f6; }
+        .info-box { background: #f8fafc; padding: 12px; border-radius: 8px; border-left: 4px solid #10b981; }
         .info-label { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold; }
         .info-value { font-size: 16px; color: #0f172a; font-weight: 600; }
 
-        /* MÁGICA RESPONSIVA */
+        /* --- MEDIA QUERIES PARA TELEMÓVEL --- */
         @media (max-width: 768px) {
             body { flex-direction: column; }
-            #painel { width: 100%; height: auto; padding: 15px; }
+            #painel { width: 100%; height: auto; padding: 15px; order: 1; }
             .info-container { flex-direction: row; gap: 8px; }
             .info-box { flex: 1; padding: 8px; }
-            #mapa { height: calc(100vh - 180px); }
+            #mapa { height: calc(100vh - 200px); order: 2; }
         }
     </style>
 </head>
 <body>
 
     <div id="painel">
-        <h2>📍 Monitoramento INSTIC</h2>
-        <button class="btn-gps" onclick="pedirLocalizacao()">📍 Ativar Minha Localização</button>
+        <h2>📍 Monitoramento Pro</h2>
+        <button class="btn-gps" onclick="pedirLocalizacao()">📍 Sincronizar Localização</button>
         <div class="info-container">
             <div class="info-box">
                 <div class="info-label">Distância</div>
@@ -62,24 +64,45 @@
             apiKey: "AIzaSyAsg5cyS2BdWTPgmUpELMy-0GMKXZjv7d8",
             databaseURL: "https://monitoramento-transporte-default-rtdb.europe-west1.firebasedatabase.app"
         };
-
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
         const mapa = L.map('mapa').setView([-9.051227, 13.398332], 14);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapa);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(mapa);
 
         let busMarker = L.marker([-9.051227, 13.398332]).addTo(mapa);
-        let userMarker = L.circleMarker([0,0], {color: 'blue', radius: 8, fillOpacity: 0.8}).addTo(mapa);
-        let linha = L.polyline([], {color: '#3b82f6', weight: 4, dashArray: '10, 10'}).addTo(mapa);
+        let userMarker = L.circleMarker([0,0], {color: '#10b981', radius: 8, fillOpacity: 1}).addTo(mapa);
+        let linha = L.polyline([], {color: '#10b981', weight: 5, opacity: 0.7}).addTo(mapa);
 
         function pedirLocalizacao() {
             if (navigator.geolocation) {
                 navigator.geolocation.watchPosition(pos => {
                     const {latitude, longitude} = pos.coords;
                     userMarker.setLatLng([latitude, longitude]);
-                }, (err) => alert("Permissão negada ou GPS indisponível."));
+                }, () => alert("Erro ao aceder ao GPS."));
             }
         }
+
+        database.ref('/transporte').on('value', (snap) => {
+            const data = snap.val();
+            if (!data) return;
+            busMarker.setLatLng([data.latitude, data.longitude]);
+            document.getElementById('vel').innerText = data.velocidade.toFixed(1) + " km/h";
+            
+            const u = userMarker.getLatLng();
+            if (u.lat !== 0) {
+                const dist = calcularDistancia(u.lat, u.lng, data.latitude, data.longitude);
+                const vel = Math.max(data.velocidade, 5); 
+                const tempo = (dist / vel) * 60;
+                
+                document.getElementById('dist').innerText = dist.toFixed(1) + " km";
+                document.getElementById('eta').innerText = tempo < 1 ? "< 1 min" : tempo.toFixed(0) + " min";
+                linha.setLatLngs([u, [data.latitude, data.longitude]]);
+                mapa.fitBounds(linha.getBounds(), {padding: [50, 50]});
+            }
+        });
 
         function calcularDistancia(lat1, lon1, lat2, lon2) {
             const R = 6371;
@@ -88,26 +111,6 @@
             const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
-
-        database.ref('/transporte').on('value', (snap) => {
-            const data = snap.val();
-            if (!data) return;
-
-            busMarker.setLatLng([data.latitude, data.longitude]);
-            document.getElementById('vel').innerText = data.velocidade.toFixed(1) + " km/h";
-            
-            const u = userMarker.getLatLng();
-            if (u.lat !== 0) {
-                const dist = calcularDistancia(u.lat, u.lng, data.latitude, data.longitude);
-                // ETA com velocidade mínima de 5km/h para não zerar o tempo
-                const vel = Math.max(data.velocidade, 5); 
-                const tempo = (dist / vel) * 60;
-                
-                document.getElementById('dist').innerText = dist.toFixed(1) + " km";
-                document.getElementById('eta').innerText = tempo < 1 ? "< 1 min" : tempo.toFixed(0) + " min";
-                linha.setLatLngs([u, [data.latitude, data.longitude]]);
-            }
-        });
     </script>
 </body>
 </html>
