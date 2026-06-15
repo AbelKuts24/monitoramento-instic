@@ -29,7 +29,6 @@
 
         #qr-modal { display:none; position:fixed; top:20%; left:50%; transform:translateX(-50%); background:white; padding:20px; border-radius:10px; box-shadow:0 0 20px rgba(0,0,0,0.3); z-index:2000; text-align:center; }
 
-        /* --- MEDIA QUERIES --- */
         @media (max-width: 768px) {
             body { flex-direction: column; }
             #painel { width: 100%; height: auto; padding: 15px; order: 1; }
@@ -68,28 +67,47 @@
         const mapa = L.map('mapa').setView([-9.051227, 13.398332], 14);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapa);
 
-        let busMarker = L.marker([-9.051227, 13.398332]).addTo(mapa);
-        let userMarker = L.circleMarker([0,0], {color: '#10b981', radius: 8, fillOpacity: 1}).addTo(mapa);
+        // Ícones Personalizados
+        const busIcon = L.icon({ iconUrl: 'img/autocarro.png', iconSize: [40, 40], iconAnchor: [20, 40] });
+        const userIcon = L.icon({ iconUrl: 'img/utilizador.png', iconSize: [30, 30], iconAnchor: [15, 15] });
+
+        let busMarker, userMarker, userCircle;
         let linha = L.polyline([], {color: '#10b981', weight: 5, opacity: 0.7}).addTo(mapa);
 
         new QRCode(document.getElementById("qrcode"), { text: window.location.href, width: 150, height: 150 });
 
         function pedirLocalizacao() {
+            const geoOptions = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
             if (navigator.geolocation) {
                 navigator.geolocation.watchPosition(pos => {
-                    userMarker.setLatLng([pos.coords.latitude, pos.coords.longitude]);
-                }, (err) => alert("GPS indisponível"));
+                    const { latitude, longitude, accuracy } = pos.coords;
+                    
+                    if (!userMarker) {
+                        userMarker = L.marker([latitude, longitude], {icon: userIcon}).addTo(mapa);
+                        userCircle = L.circle([latitude, longitude], {radius: accuracy, color: 'blue', fillOpacity: 0.1}).addTo(mapa);
+                    } else {
+                        userMarker.setLatLng([latitude, longitude]);
+                        userCircle.setLatLng([latitude, longitude]);
+                        userCircle.setRadius(accuracy);
+                    }
+                }, (err) => alert("GPS indisponível: " + err.message), geoOptions);
             }
         }
 
         database.ref('/transporte').on('value', (snap) => {
             const data = snap.val();
             if (!data) return;
-            busMarker.setLatLng([data.latitude, data.longitude]);
+
+            if (!busMarker) {
+                busMarker = L.marker([data.latitude, data.longitude], {icon: busIcon}).addTo(mapa);
+            } else {
+                busMarker.setLatLng([data.latitude, data.longitude]);
+            }
+
             document.getElementById('vel').innerText = data.velocidade.toFixed(1) + " km/h";
             
-            const u = userMarker.getLatLng();
-            if (u.lat !== 0) {
+            if (userMarker) {
+                const u = userMarker.getLatLng();
                 const dist = calcularDistancia(u.lat, u.lng, data.latitude, data.longitude);
                 document.getElementById('dist').innerText = dist.toFixed(1) + " km";
                 document.getElementById('eta').innerText = (dist / Math.max(data.velocidade, 5) * 60).toFixed(0) + " min";
